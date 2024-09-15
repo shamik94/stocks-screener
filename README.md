@@ -202,28 +202,7 @@ logging.basicConfig(level=logging.INFO)
 - **Integration Tests**: Test the entire workflow to ensure that services interact correctly and the API endpoints return the expected data.
 - **Performance Tests**: Monitor resource usage and response times when processing large datasets.
 -----
-## <a name="_jr7i9koizzgs"></a>**Contributing**
-Contributions are welcome! Please follow these steps:
 
-1. **Fork the Repository**
-
-**Create a Feature Branch**
-bash
-Copy code
-git checkout -b feature/your-feature-name
-
-**Commit Your Changes**
-bash
-Copy code
-git commit -am 'Add new feature'
-
-**Push to the Branch**
-bash
-Copy code
-git push origin feature/your-feature-name
-
-1. **Create a Pull Request**
------
 ## <a name="_lsqalxqc0n2o"></a>**License**
 This project is licensed under the MIT License. See the LICENSE file for details.
 
