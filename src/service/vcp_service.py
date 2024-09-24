@@ -4,16 +4,22 @@ import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 from src.database.models import StockData, VCPStock, ScreenedStock
+from datetime import date 
 
-def run_vcp_detection(db: Session):
-    # Fetch symbols from the screened_stocks table
-    screened_symbols = db.query(ScreenedStock.symbol).all()
-    screened_symbols = [s[0] for s in screened_symbols]
+# Turn off SettingWithCopyWarning
+pd.options.mode.chained_assignment = None
+
+def run_vcp_detection(db: Session, countries: list):
+    # Fetch symbols and countries from the screened_stocks table for the specified countries
+    screened_stocks = db.query(ScreenedStock.symbol, ScreenedStock.country).filter(ScreenedStock.country.in_(countries)).all()
+    screened_symbols = [s.symbol for s in screened_stocks]
+    symbol_country_map = {s.symbol: s.country for s in screened_stocks}
 
     # Keep track of symbols that meet the VCP criteria
     symbols_meeting_vcp = set()
 
     for symbol in screened_symbols:
+        print("Running VCP detection for Symbol " + symbol)
         # Fetch historical data for the symbol
         stock_entries = db.query(StockData).filter(StockData.symbol == symbol).order_by(StockData.date).all()
 
@@ -36,6 +42,7 @@ def run_vcp_detection(db: Session):
         is_vcp, stage = analyze_vcp(data)
 
         if is_vcp:
+            print("VCP Detected for Symbol " + symbol)
             symbols_meeting_vcp.add(symbol)
 
             # Check if the stock is already in vcp_stocks
@@ -47,96 +54,70 @@ def run_vcp_detection(db: Session):
                     db.commit()
             else:
                 # Add new VCP stock
-                vcp_stock = VCPStock(symbol=symbol, stage=stage)
+                vcp_stock = VCPStock(symbol=symbol, stage=stage, country=symbol_country_map[symbol], detected_date=date.today())
                 db.add(vcp_stock)
                 db.commit()
 
-    # Remove stocks that no longer meet the VCP criteria
-    existing_vcp_stocks = db.query(VCPStock).all()
+    # Remove stocks that no longer meet the VCP criteria for the specified countries
+    existing_vcp_stocks = db.query(VCPStock).filter(VCPStock.country.in_(countries)).all()
     for stock in existing_vcp_stocks:
         if stock.symbol not in symbols_meeting_vcp:
             db.delete(stock)
     db.commit()
 
-def analyze_vcp(data):
-    # Parameters
-    min_contractions = 2  # Minimum number of contractions
-    contraction_threshold = 0.10  # Minimum contraction size (10%)
-    contraction_decrease_tolerance = 0.05  # Allowable deviation for decreasing contractions
-    volume_decrease_tolerance = 0.05  # Allowable deviation for decreasing volume
+def analyze_vcp(data, lookback_days=14, contraction_threshold=0.08):
+    # Ensure data is sorted by date
+    data = data.sort_index()
 
-    # Find swing highs and lows
-    data['swing_high'] = data['high'][(data['high'] > data['high'].shift(1)) & (data['high'] > data['high'].shift(-1))]
-    data['swing_low'] = data['low'][(data['low'] < data['low'].shift(1)) & (data['low'] < data['low'].shift(-1))]
-
-    # Extract swing highs and lows with dates
-    swing_highs = data.dropna(subset=['swing_high'])
-    swing_lows = data.dropna(subset=['swing_low'])
-
-    # Ensure we have matching swing highs and lows
-    if swing_highs.empty or swing_lows.empty:
+    # Check if we have enough data
+    if len(data) < lookback_days * 2:
         return False, None
 
-    # Pair swing highs and lows
-    swings = []
-    i = j = 0
-    while i < len(swing_highs) and j < len(swing_lows):
-        high_date = swing_highs.index[i]
-        low_date = swing_lows.index[j]
-        if high_date < low_date:
-            swings.append({'high_date': high_date, 'high': swing_highs['swing_high'][high_date]})
-            i += 1
-        else:
-            swings.append({'low_date': low_date, 'low': swing_lows['swing_low'][low_date]})
-            j += 1
+    # Split data into recent and prior periods
+    recent_data = data.iloc[-lookback_days:]
+    prior_data = data.iloc[-(lookback_days * 2):-lookback_days].copy()
 
-    # Remove incomplete pairs and calculate contractions and volume
-    contractions = []
-    volume_during_contractions = []
-    for k in range(1, len(swings) - 1, 2):
-        if 'high' in swings[k - 1] and 'low' in swings[k]:
-            prev_high = swings[k - 1]['high']
-            curr_low = swings[k]['low']
-            contraction = (prev_high - curr_low) / prev_high
-            contractions.append(contraction)
+    # Calculate ATR for recent data
+    recent_data['H-L'] = recent_data['high'] - recent_data['low']
+    recent_data['H-PC'] = abs(recent_data['high'] - recent_data['close'].shift(1))
+    recent_data['L-PC'] = abs(recent_data['low'] - recent_data['close'].shift(1))
+    recent_data['TR'] = recent_data[['H-L', 'H-PC', 'L-PC']].max(axis=1)
+    recent_atr = recent_data['TR'].mean()
 
-            # Volume during contraction
-            start_date = swings[k - 1]['high_date']
-            end_date = swings[k]['low_date']
-            avg_volume = data.loc[start_date:end_date]['volume'].mean()
-            volume_during_contractions.append(avg_volume)
+    # Calculate ATR for prior data
+    prior_data.loc[:, 'H-L'] = prior_data['high'] - prior_data['low']
+    prior_data.loc[:, 'H-PC'] = abs(prior_data['high'] - prior_data['close'].shift(1))
+    prior_data.loc[:, 'L-PC'] = abs(prior_data['low'] - prior_data['close'].shift(1))
+    prior_data.loc[:, 'TR'] = prior_data[['H-L', 'H-PC', 'L-PC']].max(axis=1)
+    prior_atr = prior_data['TR'].mean()
 
-    if len(contractions) < min_contractions:
+    # Avoid division by zero
+    if prior_atr == 0:
         return False, None
 
-    # Check for decreasing contractions
-    decreasing_contractions = True
-    for i in range(1, len(contractions)):
-        if contractions[i] > contractions[i - 1] + contraction_decrease_tolerance:
-            decreasing_contractions = False
-            break
+    # Calculate volatility contraction
+    contraction = (prior_atr - recent_atr) / prior_atr
 
-    if not decreasing_contractions:
+    # Check if contraction meets the threshold
+    if contraction < contraction_threshold:
         return False, None
 
-    # Check contraction sizes
-    if any(c < contraction_threshold for c in contractions):
+    # Calculate SMAs up to the most recent date
+    data['50_SMA'] = data['close'].rolling(window=50).mean()
+    data['200_SMA'] = data['close'].rolling(window=200).mean()
+
+    # Get the latest values
+    last_close = data['close'].iloc[-1]
+    last_50_sma = data['50_SMA'].iloc[-1]
+    last_200_sma = data['200_SMA'].iloc[-1]
+
+    # Ensure SMAs are available
+    if pd.isna(last_50_sma) or pd.isna(last_200_sma):
         return False, None
 
-    # Check for decreasing volume during contractions
-    decreasing_volume = True
-    for i in range(1, len(volume_during_contractions)):
-        if volume_during_contractions[i] > volume_during_contractions[i - 1] + volume_decrease_tolerance * volume_during_contractions[i - 1]:
-            decreasing_volume = False
-            break
-
-    if not decreasing_volume:
-        return False, None
-
-    # Determine stage
-    if len(contractions) >= 4:
-        stage = 'MATURE'
+    # Check for Stage 2 VCP
+    if last_close > last_50_sma > last_200_sma:
+        stage = 'Stage 2'
+        return True, stage
     else:
-        stage = 'EARLY'
-
-    return True, stage
+        return False, None

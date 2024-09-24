@@ -29,7 +29,8 @@ class ScreenedStock(Base):
 class VCPStock(Base):
     __tablename__ = 'vcp_stocks'
 
-    id = Column(Integer, primary_key=True)
-    symbol = Column(String, nullable=False)
-    stage = Column(String, nullable=False)
-    detected_date = Column(DateTime, default=datetime.utcnow)
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String, index=True)
+    stage = Column(String)
+    country = Column(String)  # Add this line to include the country attribute
+    detected_date = Column(Date)

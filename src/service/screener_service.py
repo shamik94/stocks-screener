@@ -4,18 +4,16 @@ import numpy as np
 from sqlalchemy.orm import Session
 from src.database.models import StockData, ScreenedStock
 
-def run_screening(db: Session):
-    country = "usa"  # Hardcoded country variable
-
-    # Get a list of all symbols for the country
-    symbols = db.query(StockData.symbol).filter(StockData.country == country).distinct().all()
+def run_screening(db: Session, countries: list):
+    # Get a list of all symbols for the specified countries
+    symbols = db.query(StockData.symbol).filter(StockData.country.in_(countries)).distinct().all()
     symbols = [s[0] for s in symbols]
 
     # Keep track of symbols that meet the criteria
     symbols_meeting_criteria = set()
 
     for symbol in symbols:
-        print ("Screening for Symbol " + symbol);
+        print("Screening for Symbol " + symbol)
         stock_entries = db.query(StockData).filter(StockData.symbol == symbol).order_by(StockData.date).all()
         if len(stock_entries) < 50:
             # Not enough data even for 50-day moving average
@@ -75,8 +73,8 @@ def run_screening(db: Session):
 
     db.commit()
 
-    # Remove stocks that no longer meet the criteria
-    existing_screened_stocks = db.query(ScreenedStock).all()
+    # Remove stocks that no longer meet the criteria for the specified countries
+    existing_screened_stocks = db.query(ScreenedStock).filter(ScreenedStock.country.in_(countries)).all()
     for stock in existing_screened_stocks:
         if stock.symbol not in symbols_meeting_criteria:
             db.delete(stock)

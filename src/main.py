@@ -19,13 +19,13 @@ async def startup_event():
 
     print("Running screening service...")
     db = SessionLocal()
-    run_screening(db)
+    run_screening(db, countries=['india,usa'])
     db.close()
     print("Screening completed.")
 
     print("Running VCP detection service...")
     db = SessionLocal()
-    run_vcp_detection(db)
+    run_vcp_detection(db, countries=['india,usa'])
     db.close()
     print("VCP detection completed.")
 
