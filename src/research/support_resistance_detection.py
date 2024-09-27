@@ -15,7 +15,7 @@ from src.database.models import StockData
 
 # Replace 'your_database_url' with your actual database URL or ensure DATABASE_URL is set in your environment
 DATABASE_URL = os.environ.get('DATABASE_URL')
-last_n_months = 6  # Number of months to fetch data
+last_n_months = 12  # Number of months to fetch data
 
 def detect_and_plot_support_resistance(symbol, country):
     # Create database connection
@@ -95,28 +95,6 @@ def detect_and_plot_support_resistance(symbol, country):
             return np.nan
 
     pivot_points['price'] = pivot_points.apply(get_pivot_price, axis=1)
-
-    # Reintroduce trend lines connecting the two most recent pivot points for highs and lows
-    # Identify the two most recent pivot points from local highs
-    high_pivots = pivot_points[pivot_points['pivot'] == 2].sort_values(by='date', ascending=False).head(2)
-    # Identify the two most recent pivot points from local lows
-    low_pivots = pivot_points[pivot_points['pivot'] == 1].sort_values(by='date', ascending=False).head(2)
-
-    # Prepare data for plotting the high pivot line
-    if len(high_pivots) >= 2:
-        x_high = [high_pivots['date'].iloc[1], high_pivots['date'].iloc[0]]
-        y_high = [high_pivots['price'].iloc[1], high_pivots['price'].iloc[0]]
-    else:
-        x_high = []
-        y_high = []
-
-    # Prepare data for plotting the low pivot line
-    if len(low_pivots) >= 2:
-        x_low = [low_pivots['date'].iloc[1], low_pivots['date'].iloc[0]]
-        y_low = [low_pivots['price'].iloc[1], low_pivots['price'].iloc[0]]
-    else:
-        x_low = []
-        y_low = []
 
     # Function to group pivot points within 5% price range
     def group_pivot_points(pivot_points, max_gap=0.05):
@@ -299,27 +277,7 @@ def detect_and_plot_support_resistance(symbol, country):
     # Add horizontal lines at pivot points
     for idx, row in pivot_points.iterrows():
         fig.add_hline(y=row['price'], line_dash="dot", line_color="blue",
-                      annotation_text=f"---", annotation_position="right")
-
-    # Add the high pivot line to the plot
-    if len(x_high) == 2:
-        fig.add_trace(go.Scatter(
-            x=x_high,
-            y=y_high,
-            mode='lines',
-            line=dict(color='magenta', width=2),
-            name='High Trend Line'
-        ))
-
-    # Add the low pivot line to the plot
-    if len(x_low) == 2:
-        fig.add_trace(go.Scatter(
-            x=x_low,
-            y=y_low,
-            mode='lines',
-            line=dict(color='cyan', width=2),
-            name='Low Trend Line'
-        ))
+                      annotation_text=f"<---", annotation_position="right")
 
     # Get min and max prices for y-axis range
     y_min = min(dfpl['low'].min(), pivot_points['price'].min())
