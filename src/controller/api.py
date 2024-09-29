@@ -1,10 +1,11 @@
 # src/controller/api.py
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.database.models import ScreenedStock, VCPStock
 from src.database import SessionLocal
-from src.research.support_resistance_detection import detect_and_plot_support_resistance
+from src.research.support_resistance_detection import detect_and_plot_support_resistance as detect_and_plot_support_resistance_v1
+from src.research.support_resistance_detection_v2 import detect_and_plot_support_resistance as detect_and_plot_support_resistance_v2
 
 router = APIRouter()
 
@@ -28,9 +29,25 @@ def get_vcp_stocks(db: Session = Depends(get_db)):
     return {"vcp_stocks": result}
 
 @router.get("/support_resistance_graph")
-def get_support_resistance_graph(symbol: str, country: str):
+def get_support_resistance_graph(
+    symbol: str = Query(..., description="Stock symbol"),
+    country: str = Query(..., description="Country of the stock"),
+    months: int = Query(6, description="Number of months to fetch data")
+):
     try:
-        graph_data = detect_and_plot_support_resistance(symbol, country)
+        graph_data = detect_and_plot_support_resistance_v1(symbol, country, months)
+        return graph_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating graph: {str(e)}")
+
+@router.get("/support_resistance_graph_v2")
+def get_support_resistance_graph_v2(
+    symbol: str = Query(..., description="Stock symbol"),
+    country: str = Query(..., description="Country of the stock"),
+    months: int = Query(6, description="Number of months to fetch data")
+):
+    try:
+        graph_data = detect_and_plot_support_resistance_v2(symbol, country, months)
         return graph_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating graph: {str(e)}")

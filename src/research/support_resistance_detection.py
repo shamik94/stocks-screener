@@ -15,16 +15,15 @@ from src.database.models import StockData
 
 # Replace 'your_database_url' with your actual database URL or ensure DATABASE_URL is set in your environment
 DATABASE_URL = os.environ.get('DATABASE_URL')
-last_n_months = 12  # Number of months to fetch data
 
-def detect_and_plot_support_resistance(symbol, country):
+def detect_and_plot_support_resistance(symbol, country, months=6):
     # Create database connection
     engine = create_engine(DATABASE_URL)
     Session = sessionmaker(bind=engine)
     session = Session()
 
     # Calculate the date N months ago from today
-    start_date = datetime.now() - timedelta(days=last_n_months * 30)
+    start_date = datetime.now() - timedelta(days=months * 30)
 
     # Fetch data from the database for the last N months
     query = session.query(StockData).filter(
